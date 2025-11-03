@@ -264,7 +264,7 @@ async def exec_cypher_on_db_(kg_path: str, query: str) -> Tuple[str, Any]:
             repo_name = NEO4J_OVERRIDE_KG
         result = await NEO4J.query_neo4j(repo_name, query)
         res_out = [tuple(record) for record in result]
-        # deb = pathlib.Path("/home/vejvar-martin-nj/git/picard/debug_exec_cypher.log").resolve()
+        # deb = pathlib.Path("~/git/uT5-ssc/debug_exec_cypher.log").resolve()
         # with deb.open("a") as f:
         #     f.write(f'{json.dumps({"repo": repo_name, "res": res_out}, indent=2)}\n')
         return "result", res_out
@@ -339,7 +339,7 @@ def eval_exec_match(
         g_str = remove_distinct(g_str, lang)
 
     # DEBUG: WORKS NOW !!!    
-    deb = pathlib.Path("/home/vejvar-martin-nj/git/picard/debug.log").resolve()
+    deb = pathlib.Path("~/git/uT5-ssc/debug.log").resolve()
     with deb.open("a") as f:
         f.write(f'{json.dumps({"p_str": p_str, "g_str": g_str}, indent=2)}\n')
 

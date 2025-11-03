@@ -92,7 +92,7 @@ class RDF4jConnector:
 
         prefixes = "\n".join([f"PREFIX {prefix}: <{uri}>" for prefix, uri in self.namespaces[repository_id].items()])
         query_with_prefixes = f"{prefixes}\n{sparql_query}"
-        # with open("~/git/picard/debug.log", "a") as f:
+        # with open("~/git/uT5-ssc/debug.log", "a") as f:
         #     f.write(f'{json.dumps({"p": prefixes, "q": sparql_query,"q_w_prefixes": query_with_prefixes}, indent=2)}\n')
 
         endpoint_url = f"{self.base_url}/repositories/{repository_id}"
@@ -114,7 +114,7 @@ async def main():
     connector = RDF4jConnector()
     repository_id = "singer"
     graph_uri = f"http://example.org/graph/{repository_id}"
-    ttl_file_path = f"/home/vejvar-martin-nj/git/picard/.cache/downloads/extracted/c702c18c8d855b7bc0a53f5b230cd5314a83d607fea4df3ad5612a557fae3dd2/Spider4SSC/database/{repository_id}/{repository_id}.ttl"  # Replace with your Turtle file path
+    ttl_file_path = f"~/git/uT5-ssc/.cache/downloads/extracted/c702c18c8d855b7bc0a53f5b230cd5314a83d607fea4df3ad5612a557fae3dd2/Spider4SSC/database/{repository_id}/{repository_id}.ttl"  # Replace with your Turtle file path
 
     try:
         await connector.create_repository(repository_id)
