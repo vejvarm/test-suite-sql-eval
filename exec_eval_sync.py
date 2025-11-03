@@ -1,6 +1,5 @@
 import json
 import os
-import pathlib
 import re
 import sqlite3
 import asyncio
@@ -20,19 +19,11 @@ from neo4j.time import DateTime, Date, Time
 from rdflib import Graph
 
 from .parse import get_all_preds_for_execution, remove_distinct
-from .rdf4j_connector import RDF4jConnector
-from .neo4j_connector import Neo4jConnector
-from .postgres_connector import PostgresConnector
 
-NEO4J_DB_ROOT = os.getenv("NEO4J_DB_ROOT", "/neo4j")
-NEO4J_OVERRIDE_KG = os.getenv("NEO4J_OVERRIDE_KG", None)
 
 threadLock = threading.Lock()
 TIMEOUT = 60
 EXEC_TMP_DIR = os.path.join(os.path.dirname(__file__), "tmp")
-RDF4J = RDF4jConnector()
-NEO4J = Neo4jConnector(neo4j_root=NEO4J_DB_ROOT)
-POSTGRES = PostgresConnector()
 
 
 DATATYPES = {
@@ -167,7 +158,7 @@ def get_cursor_from_path(sqlite_path: str):
     return cursor
 
 
-async def exec_on_db_(sqlite_path: str, query: str) -> Tuple[str, Any]:
+def exec_on_db_(sqlite_path: str, query: str) -> Tuple[str, Any]:
     query = replace_cur_year(query)
     cursor = get_cursor_from_path(sqlite_path)
     try:
@@ -246,30 +237,17 @@ def exec_sparql_sync(kg_path: str, query: str):
     graph.close()
     return result
 
-async def exec_sparql_on_db_(kg_path: str, query: str) -> Tuple[str, Any]:
+def exec_sparql_on_db_(kg_path: str, query: str) -> Tuple[str, Any]:
     try:
-        repo_name = pathlib.Path(kg_path).stem
-        result = await RDF4J.query_rdf4j(repo_name, query)
-        result_serialized = json.dumps(result)
+        with ThreadPoolExecutor() as executor:
+            result = exec_sparql_sync(kg_path, query)
+        # result = graph.query(query)
+        result_serialized = result.serialize(format='json').decode('utf-8')
+        print("done")
         return "result", _transform_rdflib_result(result_serialized)
     except Exception as e:
         return "exception", e
 
-
-async def exec_cypher_on_db_(kg_path: str, query: str) -> Tuple[str, Any]:
-    try:
-        if NEO4J_OVERRIDE_KG is None:
-            repo_name = pathlib.Path(kg_path).stem
-        else:
-            repo_name = NEO4J_OVERRIDE_KG
-        result = await NEO4J.query_neo4j(repo_name, query)
-        res_out = [tuple(record) for record in result]
-        # deb = pathlib.Path("/home/vejvar-martin-nj/git/picard/debug_exec_cypher.log").resolve()
-        # with deb.open("a") as f:
-        #     f.write(f'{json.dumps({"repo": repo_name, "res": res_out}, indent=2)}\n')
-        return "result", res_out
-    except Exception as e:
-        return "exception", e
 
 # async def exec_sparql_on_db_(kg_path: str, query: str) -> Tuple[str, Any]:
 #     query = replace_cur_year(query)
@@ -284,20 +262,15 @@ async def exec_cypher_on_db_(kg_path: str, query: str) -> Tuple[str, Any]:
 #         del graph
 #         return "exception", e
 
-async def exec_on_db(
+def exec_on_db(
     db_path: str, query: str, process_id: str = "", timeout: int = TIMEOUT, lang: str = "sql"
 ) -> Tuple[str, Any]:
     try:
-        if "postgresql" in lang:
-            return await asyncio.wait_for(POSTGRES.query_postgresql(query), timeout)
-        elif "sql" in lang: 
-            return await asyncio.wait_for(exec_on_db_(db_path, query), timeout)
+        if "sql" in lang: 
+            return exec_on_db_(db_path, query)
         elif "sparql" in lang:
-            return await asyncio.wait_for(exec_sparql_on_db_(db_path, query), timeout)
-        elif "cypher" in lang:
-            return await asyncio.wait_for(exec_cypher_on_db_(db_path, query), timeout)
-        else:
-            raise NotImplementedError("`lang` must be one of `sql`, `sparql` or `cypher`.")
+            print("executing sparql")
+            return exec_sparql_on_db_(db_path, query)
     except asyncio.TimeoutError:
         return ('exception', TimeoutError)
     except Exception as e:
@@ -325,7 +298,7 @@ def eval_exec_match(
     plug_value: bool,
     keep_distinct: bool,
     progress_bar_for_each_datapoint: bool,
-    lang = "sql",  # can be postgresql, sql, sparql or cypher
+    lang = "sql",  # can be sql, sparql or cypher
 ) -> int:
     # post-process the prediction.
     # e.g. removing spaces between ">" and "="
@@ -338,11 +311,6 @@ def eval_exec_match(
             return 0
         g_str = remove_distinct(g_str, lang)
 
-    # DEBUG: WORKS NOW !!!    
-    deb = pathlib.Path("/home/vejvar-martin-nj/git/picard/debug.log").resolve()
-    with deb.open("a") as f:
-        f.write(f'{json.dumps({"p_str": p_str, "g_str": g_str}, indent=2)}\n')
-
     # we decide whether two denotations are equivalent based on "bag semantics"
     # https://courses.cs.washington.edu/courses/cse444/10sp/lectures/lecture16.pdf
     # if there is order by in query, then we assume order of the rows matter
@@ -351,8 +319,7 @@ def eval_exec_match(
     order_matters = "order by" in g_str.lower()
 
     # based on the language, we choose the database types to load
-    ext_map = {"postgresql": ".sqlite",
-               "sql": ".sqlite",
+    ext_map = {"sql": ".sqlite",
                "sparql": ".ttl",
                "cypher": ".ttl"}
 
@@ -383,19 +350,10 @@ def eval_exec_match(
             ranger = tqdm.tqdm(db_paths)
         else:
             ranger = db_paths
-        
+
         for db_path in ranger:
-            async def run_queries():
-                return await asyncio.gather(
-                    exec_on_db(db_path, g_str, lang=lang),
-                    exec_on_db(db_path, pred, lang=lang),
-                    return_exceptions=True  # Capture exceptions
-                )
-            g_result, p_result = asyncio.run(run_queries())
-            g_flag, g_denotation = g_result
-            p_flag, p_denotation = p_result
-            # g_flag, g_denotation = asyncio.run(exec_on_db(db_path, g_str, lang=lang))
-            # p_flag, p_denotation = asyncio.run(exec_on_db(db_path, pred, lang=lang))
+            g_flag, g_denotation = exec_on_db(db_path, g_str, lang=lang)
+            p_flag, p_denotation = exec_on_db(db_path, pred, lang=lang)
 
             # we should expect the gold to be succesfully executed on the database
             assert (

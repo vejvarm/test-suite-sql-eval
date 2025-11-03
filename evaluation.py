@@ -21,6 +21,7 @@
 
 import os
 import json
+import pathlib
 import sqlite3
 import argparse
 
@@ -429,6 +430,12 @@ def count_others(sql):
 
 class Evaluator:
     """A simple evaluator"""
+    _lang_ext_map = {
+        "postgresql": ".sqlite",
+        "sql": ".sqlite",
+        "sparql": ".ttl",
+        "cypher": ".ttl"
+    }
 
     def __init__(
         self,
@@ -437,19 +444,27 @@ class Evaluator:
         etype,
         plug_value,
         keep_distinct,
-        progress_bar_for_each_datapoint
+        progress_bar_for_each_datapoint,
+        lang="sql",
     ):
         self.db_dir = db_dir
         self.kmaps = kmaps
-        self.etype = etype
+        self.etype = etype  # all, exec, match
         self.plug_value = plug_value
         self.keep_distinct = keep_distinct
         self.progress_bar_for_each_datapoint = progress_bar_for_each_datapoint
+        self.lang = lang
+
+        if self.lang not in ["postgresql", "sql", "sparql", "cypher"]:
+            raise NotImplementedError("Supported evaluation languages are `postgresql`, `sql`, `sparql` or `cypher`.") 
+
+        print(f"Evaluating for language: {self.lang}")
 
         self.db_paths = {}
         self.schemas = {}
 
         self.scores = {}
+        self.scores["exec_list"] = []
 
         for turn in TURNS:
             self.scores[turn] = {"count": 0, "exact": 0.0}
@@ -466,6 +481,8 @@ class Evaluator:
                     "acc_count": 0,
                     "rec_count": 0,
                 }
+
+        self.db_ext = self._lang_ext_map[lang]
 
     def eval_hardness(self, sql):
         count_comp1_ = count_component1(sql)
@@ -603,9 +620,12 @@ class Evaluator:
 
     def evaluate_one(self, db_name, gold, predicted, turn_scores, idx):
         if db_name not in self.db_paths:
-            db_path = os.path.join(self.db_dir, db_name, db_name + ".sqlite")
+            db_path = os.path.join(self.db_dir, db_name, db_name + self.db_ext)
             self.db_paths[db_name] = db_path
-            self.schemas[db_name] = Schema(get_schema(db_path))
+            if self.lang == "sql":
+                self.schemas[db_name] = Schema(get_schema(db_path))
+            else:
+                self.schemas[db_name] = None
 
         if idx > 3:
             idx = "> 4"
@@ -640,6 +660,10 @@ class Evaluator:
                 }
 
         if self.etype in ["all", "exec"]:
+            # DEBUG: WORKS
+            # deb = pathlib.Path("/home/vejvar-martin-nj/git/picard/debug.log").resolve()
+            # with deb.open("a") as f:
+            #     f.write(f'{json.dumps({"gold": gold}, indent=2)}\n')
             exec_score = eval_exec_match(
                 db=self.db_paths[db_name],
                 p_str=predicted,
@@ -647,6 +671,7 @@ class Evaluator:
                 plug_value=self.plug_value,
                 keep_distinct=self.keep_distinct,
                 progress_bar_for_each_datapoint=self.progress_bar_for_each_datapoint,
+                lang=self.lang
             )
             if exec_score:
                 if self.etype == 'all':
@@ -654,8 +679,10 @@ class Evaluator:
                 self.scores[turn_id]["exec"] += 1
                 self.scores["all"]["exec"] += 1
                 turn_scores["exec"].append(1)
+                self.scores["exec_list"].append({"db_name": db_name, "g": gold, "p": predicted, "exec": 1})
             else:
                 turn_scores["exec"].append(0)
+                self.scores["exec_list"].append({"db_name": db_name, "g": gold, "p": predicted, "exec": 0})
 
         if self.etype in ["all", "match"]:
             # rebuild sql for value evaluation
@@ -773,6 +800,8 @@ class Evaluator:
                                         + scores[level]["partial"][type_]["acc"]
                                 )
                         )
+        with open(f"eval_scores_{self.lang}.json", "w") as f:
+            json.dump(scores, f, indent=4, ensure_ascii=False)
 
 
 def isValidSQL(sql, db):
@@ -898,6 +927,7 @@ def evaluate(
     results = []
 
     for i, (p, g) in enumerate(zip(plist, glist)):
+        print(p, g)
         if (i + 1) % 10 == 0:
             print("Evaluating %dth prediction" % (i + 1))
         evaluator.scores["joint_all"]["count"] += 1

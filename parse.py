@@ -89,6 +89,7 @@ def strip_query(query: str) -> Tuple[List[str], List[str]]:
 
 
 def reformat_query(query: str) -> str:
+    print(query)
     query = query.strip().replace(";", "").replace("\t", "")
     query = " ".join(
         [t.value for t in tokenize(query) if t.ttype != sqlparse.tokens.Whitespace]
@@ -157,7 +158,9 @@ def get_all_preds_for_execution(gold: str, pred: str) -> Tuple[int, Iterator[str
     )
 
 
-def remove_distinct(s):
+def remove_distinct(s, lang: str = "sql"):
+    if "sql" not in lang:
+        return s.replace("DISTINCT", " ").replace("distinct", " ")
     toks = [t.value for t in list(sqlparse.parse(s)[0].flatten())]
     return "".join([t for t in toks if t.lower() != "distinct"])
 
