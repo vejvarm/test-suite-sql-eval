@@ -661,7 +661,7 @@ class Evaluator:
 
         if self.etype in ["all", "exec"]:
             # DEBUG: WORKS
-            # deb = pathlib.Path("~/git/uT5-ssc/debug.log").resolve()
+            # deb = pathlib.Path("./debug.log").resolve()
             # with deb.open("a") as f:
             #     f.write(f'{json.dumps({"gold": gold}, indent=2)}\n')
             exec_score = eval_exec_match(

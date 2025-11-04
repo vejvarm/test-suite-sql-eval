@@ -339,7 +339,7 @@ def eval_exec_match(
         g_str = remove_distinct(g_str, lang)
 
     # DEBUG: WORKS NOW !!!    
-    deb = pathlib.Path("~/git/uT5-ssc/debug.log").resolve()
+    deb = pathlib.Path("./debug.log").resolve()
     with deb.open("a") as f:
         f.write(f'{json.dumps({"p_str": p_str, "g_str": g_str}, indent=2)}\n')
 

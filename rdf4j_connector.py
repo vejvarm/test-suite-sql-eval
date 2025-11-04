@@ -92,7 +92,7 @@ class RDF4jConnector:
 
         prefixes = "\n".join([f"PREFIX {prefix}: <{uri}>" for prefix, uri in self.namespaces[repository_id].items()])
         query_with_prefixes = f"{prefixes}\n{sparql_query}"
-        # with open("~/git/uT5-ssc/debug.log", "a") as f:
+        # with open("./debug.log", "a") as f:
         #     f.write(f'{json.dumps({"p": prefixes, "q": sparql_query,"q_w_prefixes": query_with_prefixes}, indent=2)}\n')
 
         endpoint_url = f"{self.base_url}/repositories/{repository_id}"
