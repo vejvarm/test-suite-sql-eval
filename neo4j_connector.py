@@ -2,17 +2,20 @@ import subprocess
 import asyncio
 import pathlib
 import time
+import os
 from neo4j import AsyncGraphDatabase
 
 class Neo4jConnector:
     def __init__(self, uri="bolt://localhost:7687", username="neo4j", password="secretserver", 
-                 neo4j_root: pathlib.Path = pathlib.Path("/neo4j/"), database_subfolder: str = "import/database"):
+                 neo4j_root: pathlib.Path = pathlib.Path("/neo4j/"), database_subfolder: str = None):
         self.uri = uri
         self.username = username
         self.password = password
         self.driver = AsyncGraphDatabase.driver(uri, auth=(username, password))
         self.database = None
         self.neo4j_root = pathlib.Path(neo4j_root)
+        if database_subfolder is None:
+            database_subfolder = os.getenv("NEO4J_DB_SUBFOLDER", "import/database")
         self.database_subfolder = database_subfolder
 
     def extract_prefixes_from_ttl(self, db_name: str):
@@ -21,7 +24,6 @@ class Neo4jConnector:
         """
         prefixes = {}
         ttl_file = self.neo4j_root.joinpath(self.database_subfolder).joinpath(db_name).joinpath(f"{db_name}.ttl")
-        print(ttl_file)
         with ttl_file.open() as f:
             for line in f.readlines():
                 if line.startswith("@prefix"):
