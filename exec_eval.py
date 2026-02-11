@@ -15,6 +15,7 @@ import time
 import pickle as pkl
 import subprocess
 from itertools import chain
+from decimal import Decimal
 
 from neo4j.time import DateTime, Date, Time
 from rdflib import Graph
@@ -45,6 +46,9 @@ DATATYPES = {
     "time": ["http://www.w3.org/2001/XMLSchema#time"],
 }
 
+FLOAT_ROUND_DIGITS = 1
+
+
 def permute_tuple(element: Tuple, perm: Tuple) -> Tuple:
     assert len(element) == len(perm)
     return tuple([element[i] for i in perm])
@@ -52,6 +56,28 @@ def permute_tuple(element: Tuple, perm: Tuple) -> Tuple:
 
 def unorder_row(row: Tuple) -> Tuple:
     return tuple(sorted(row, key=lambda x: str(x) + str(type(x))))
+
+
+def _normalize_scalar(value: Any) -> Any:
+    if isinstance(value, float):
+        return round(value, FLOAT_ROUND_DIGITS)
+    if isinstance(value, Decimal):
+        return round(float(value), FLOAT_ROUND_DIGITS)
+    return value
+
+
+def _normalize_value(value: Any) -> Any:
+    if isinstance(value, tuple):
+        return tuple(_normalize_value(item) for item in value)
+    if isinstance(value, list):
+        return [_normalize_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _normalize_value(item) for key, item in value.items()}
+    return _normalize_scalar(value)
+
+
+def normalize_results(results: List[Tuple]) -> List[Tuple]:
+    return [_normalize_value(row) for row in results]
 
 
 # unorder each row in the table
@@ -112,6 +138,9 @@ def result_eq(result1: List[Tuple], result2: List[Tuple], order_matters: bool) -
     # if the results do not have the same number of columns, they are different
     if len(result2[0]) != num_cols:
         return False
+
+    result1 = normalize_results(result1)
+    result2 = normalize_results(result2)
 
     # unorder each row and compare whether the denotation is the same
     # this can already find most pair of denotations that are different
@@ -271,19 +300,6 @@ async def exec_cypher_on_db_(kg_path: str, query: str) -> Tuple[str, Any]:
     except Exception as e:
         return "exception", e
 
-# async def exec_sparql_on_db_(kg_path: str, query: str) -> Tuple[str, Any]:
-#     query = replace_cur_year(query)
-#     graph = get_graph_from_path(kg_path)
-#     try:
-#         result = graph.query(query)
-#         result_serialized = result.serialize(format='json').decode('utf-8')
-#         graph.close()
-#         return "result", _transform_rdflib_result(result_serialized)
-#     except Exception as e:
-#         graph.close()
-#         del graph
-#         return "exception", e
-
 async def exec_on_db(
     db_path: str, query: str, process_id: str = "", timeout: int = TIMEOUT, lang: str = "sql"
 ) -> Tuple[str, Any]:
@@ -337,11 +353,6 @@ def eval_exec_match(
         except Exception as e:
             return 0
         g_str = remove_distinct(g_str, lang)
-
-    # DEBUG: WORKS NOW !!!    
-    deb = pathlib.Path("./debug.log").resolve()
-    with deb.open("a") as f:
-        f.write(f'{json.dumps({"p_str": p_str, "g_str": g_str}, indent=2)}\n')
 
     # we decide whether two denotations are equivalent based on "bag semantics"
     # https://courses.cs.washington.edu/courses/cse444/10sp/lectures/lecture16.pdf

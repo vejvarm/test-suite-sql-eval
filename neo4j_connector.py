@@ -3,6 +3,7 @@ import asyncio
 import pathlib
 import time
 import os
+import shlex
 from neo4j import AsyncGraphDatabase
 
 class Neo4jConnector:
@@ -14,6 +15,7 @@ class Neo4jConnector:
         self.driver = AsyncGraphDatabase.driver(uri, auth=(username, password))
         self.database = None
         self.neo4j_root = pathlib.Path(neo4j_root)
+        self.container_name = os.getenv("NEO4J_DOCKER_CONTAINER", "neo4j_server")
         if database_subfolder is None:
             database_subfolder = os.getenv("NEO4J_DB_SUBFOLDER", "import/database")
         self.database_subfolder = database_subfolder
@@ -76,16 +78,21 @@ class Neo4jConnector:
 
     async def wipe_databases(self):
             try:
+                data_dir = self.neo4j_root.joinpath("data")
                 # Stop the Neo4j server
-                print("Stopping Neo4j docker server")
-                subprocess.run(["docker", "stop", "neo4j_server"], check=True)
+                print(f"Stopping Neo4j docker server `{self.container_name}`")
+                subprocess.run(["docker", "stop", self.container_name], check=True)
 
-                # Remove the database folder contents as superuser
-                print("Removing database folders from `/neo4j/data/`")
-                subprocess.run("sudo rm -rf /neo4j/data/*", shell=True, check=True)
+                # Remove database files under the configured Neo4j root.
+                print(f"Removing database folders from `{data_dir}`")
+                rm_cmd = f"sudo rm -rf {shlex.quote(str(data_dir))}/*"
+                try:
+                    subprocess.run(rm_cmd, shell=True, check=True)
+                except subprocess.CalledProcessError:
+                    subprocess.run(f"sudo {rm_cmd}", shell=True, check=True)
 
-                print("Starting Neo4j docker server")
-                subprocess.run(["docker", "start", "neo4j_server"], check=True)
+                print(f"Starting Neo4j docker server `{self.container_name}`")
+                subprocess.run(["docker", "start", self.container_name], check=True)
 
                 print("Waiting 60 seconds to initialize the server.")
                 time.sleep(60)
